@@ -166,13 +166,9 @@ class OpenAICompatibleConversationEntity(
         elif user_input.conversation_id in self.history:
             conversation_id = user_input.conversation_id
             messages = self.history[conversation_id]
-            LOGGER.debug("Found existing history for conversation ID: %s", conversation_id)
-
+            LOGGER.debug("Found existing history for the conversation ID: %s", conversation_id)
+            LOGGER.debug("History Messages Length: %s", len(str(messages)))
         else:
-            # Conversation IDs are ULIDs. We generate a new one if not provided.
-            # If an old OLID is passed in, we will generate a new one to indicate
-            # a new conversation was started. If the user picks their own, they
-            # want to track a conversation and we respect it.
             # Conversation IDs are ULIDs. We generate a new one if not provided.
             # If an old OLID is passed in, we will generate a new one to indicate
             # a new conversation was started. If the user picks their own, they
