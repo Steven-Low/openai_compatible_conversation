@@ -31,6 +31,11 @@ from homeassistant.helpers import device_registry as dr, intent, llm, template
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import ulid
 
+
+
+import base64
+from functools import partial
+
 from . import OpenAICompatibleConfigEntry
 from .const import (
     CONF_CHAT_MODEL,
@@ -118,6 +123,42 @@ class OpenAICompatibleConversationEntity(
         """When entity will be removed from Home Assistant."""
         conversation.async_unset_agent(self.hass, self.entry)
         await super().async_will_remove_from_hass()
+
+    @staticmethod
+    def decode_audio_message(messages):
+        final_messages = []
+
+        # Identify last user message index
+        last_user_index = max(i for i, msg in enumerate(messages) if msg["role"] == "user")
+
+        for i, msg in enumerate(messages):
+            if msg["role"] == "user":
+                content = []
+                for part in msg["content"]:
+                    if part.get("type") == "input_audio" and "data" in part["input_audio"]:
+                        path = part["input_audio"]["data"]
+                        if i == last_user_index:
+                            # For the last user message: embed base64 audio
+                            with open(path, "rb") as f:
+                                base64_audio = base64.b64encode(f.read()).decode("utf-8")
+                                content.append({
+                                    "type": "input_audio",
+                                    "input_audio": {
+                                        "data": base64_audio,
+                                        "format": "wav"
+                                    }
+                                })
+                    else:
+                        content.append(part)
+                final_messages.append({
+                    "role": "user",
+                    "content": content
+                })
+
+            else:
+                final_messages.append(msg)
+        return final_messages
+
 
     async def async_process(
         self, user_input: conversation.ConversationInput
@@ -232,11 +273,36 @@ class OpenAICompatibleConversationEntity(
 
         prompt = "\n".join(prompt_parts)
 
+        # Check if user_input.text is base64 encoded audio
+        isAudio = user_input.text.endswith(".wav")
+        current_user_message_content = []
+        if isAudio:
+            current_user_message_content.append({
+                "type": "input_audio",
+                "input_audio": {
+                    "data": user_input.text,
+                    "format": "wav"
+                }
+            })
+            current_user_message_content.append({
+                "type": "text",
+                "text": user_input.text,
+            })
+        else:
+            current_user_message_content.append({
+                "type": "text",
+                "text": user_input.text
+            })
+
+
         # Create a copy of the variable because we attach it to the trace
         messages = [
             ChatCompletionSystemMessageParam(role="system", content=prompt),
             *messages[1:],
-            ChatCompletionUserMessageParam(role="user", content=user_input.text),
+            ChatCompletionUserMessageParam(
+                role="user",
+                content=current_user_message_content
+            ),
         ]
 
         LOGGER.debug("Prompt: %s", messages)
@@ -246,13 +312,20 @@ class OpenAICompatibleConversationEntity(
             {"messages": messages, "tools": llm_api.tools if llm_api else None},
         )
 
+        final_messages = await self.hass.async_add_executor_job(partial(self.decode_audio_message, messages=messages))
+
         client = self.entry.runtime_data
         # To prevent infinite loops, we limit the number of iterations
-        for _iteration in range(MAX_TOOL_ITERATIONS):
+        for _iteration in range(3): #MAX_TOOL_ITERATIONS
+
+                # if msg.get("content") is None:
+                #     LOGGER.error("Found message with null content: %s", msg)
+                #     raise ValueError("****************Message content cannot be null")
+
             try:
                 result = await client.chat.completions.create(
                     model=options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL),
-                    messages=messages,
+                    messages=final_messages,
                     tools=tools or NOT_GIVEN,
                     max_tokens=options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS),
                     top_p=options.get(CONF_TOP_P, RECOMMENDED_TOP_P),
@@ -292,13 +365,14 @@ class OpenAICompatibleConversationEntity(
                     ]
                 param = ChatCompletionAssistantMessageParam(
                     role=message.role,
-                    content=message.content,
+                    content=message.content or "",
                 )
                 if tool_calls:
                     param["tool_calls"] = tool_calls
                 return param
 
             messages.append(message_convert(response))
+            final_messages.append(message_convert(response))
             tool_calls = response.tool_calls
 
             if not tool_calls or not llm_api:
@@ -328,6 +402,13 @@ class OpenAICompatibleConversationEntity(
                         content=json.dumps(tool_response),
                     )
                 )
+                final_messages.append(
+                    ChatCompletionToolMessageParam(
+                        role="tool",
+                        tool_call_id=tool_call.id,
+                        content=json.dumps(tool_response),
+                    )
+                )
 
         LOGGER.debug("Saving history for conversation ID: %s", conversation_id)
         self.history[conversation_id] = messages
@@ -337,6 +418,7 @@ class OpenAICompatibleConversationEntity(
         return conversation.ConversationResult(
             response=intent_response, conversation_id=conversation_id
         )
+
 
     async def _async_entry_update_listener(
         self, hass: HomeAssistant, entry: ConfigEntry
