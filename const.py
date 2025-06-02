@@ -17,3 +17,5 @@ CONF_TEMPERATURE = "temperature"
 RECOMMENDED_TEMPERATURE = 1.0
 CONF_BASE_URL = "base_url"
 RECOMMENDED_BASE_URL = "https://api.openai.com/v1"
+CONF_MAX_HISTORY = "max_history"
+RECOMMENDED_MAX_HISTORY = 30

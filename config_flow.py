@@ -41,7 +41,9 @@ from .const import (
     RECOMMENDED_TEMPERATURE,
     RECOMMENDED_TOP_P,
     CONF_BASE_URL,
-    RECOMMENDED_BASE_URL
+    RECOMMENDED_BASE_URL,
+    CONF_MAX_HISTORY,
+    RECOMMENDED_MAX_HISTORY
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,6 +59,7 @@ RECOMMENDED_OPTIONS = {
     CONF_RECOMMENDED: True,
     CONF_LLM_HASS_API: llm.LLM_API_ASSIST,
     CONF_PROMPT: llm.DEFAULT_INSTRUCTIONS_PROMPT,
+    CONF_MAX_HISTORY: 30
 }
 
 
@@ -214,6 +217,11 @@ def openai_compatible_config_option_schema(
                 description={"suggested_value": options.get(CONF_TEMPERATURE)},
                 default=RECOMMENDED_TEMPERATURE,
             ): NumberSelector(NumberSelectorConfig(min=0, max=2, step=0.05)),
+            vol.Optional(
+                CONF_MAX_HISTORY,
+                description={"suggested_value": options.get(CONF_MAX_HISTORY)},
+                default=RECOMMENDED_MAX_HISTORY,
+            ):int
         }
     )
     return schema

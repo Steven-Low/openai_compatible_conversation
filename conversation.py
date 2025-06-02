@@ -38,12 +38,15 @@ from .const import (
     CONF_PROMPT,
     CONF_TEMPERATURE,
     CONF_TOP_P,
+    CONF_MAX_HISTORY,
     DOMAIN,
     LOGGER,
     RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_MAX_TOKENS,
     RECOMMENDED_TEMPERATURE,
     RECOMMENDED_TOP_P,
+    RECOMMENDED_MAX_HISTORY
+
 )
 
 # Max number of back and forth with the LLM to generate a response
@@ -166,8 +169,12 @@ class OpenAICompatibleConversationEntity(
         elif user_input.conversation_id in self.history:
             conversation_id = user_input.conversation_id
             messages = self.history[conversation_id]
+            if len(messages) > options.get(CONF_MAX_HISTORY, RECOMMENDED_MAX_HISTORY) + 2:
+                del messages[1:3]
             LOGGER.debug("Found existing history for the conversation ID: %s", conversation_id)
-            LOGGER.debug("History Messages Length: %s", len(str(messages)))
+            LOGGER.debug("History Messages Length: %s Messages: %s", len(messages), str(messages))
+
+
         else:
             # Conversation IDs are ULIDs. We generate a new one if not provided.
             # If an old OLID is passed in, we will generate a new one to indicate
@@ -183,6 +190,7 @@ class OpenAICompatibleConversationEntity(
                 messages = self.history.get(conversation_id, [])
                 if not messages:
                      LOGGER.debug("No history found for valid ULID: %s, starting fresh.", conversation_id)
+
 
             except ValueError:
                 # If it's not a valid ULID, use the provided ID as is (likely for custom tracking)
